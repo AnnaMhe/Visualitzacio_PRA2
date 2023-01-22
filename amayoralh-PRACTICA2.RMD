@@ -1,0 +1,382 @@
+---
+title: 'Visualització de dades: Pràctica 2'
+author: "Autor: Anna Mayoral Hernando"
+date: "Gener 2023"
+output:
+  pdf_document:
+    highlight: zenburn
+    toc: yes
+  word_document: default
+  html_document:
+    highlight: default
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+*****
+# Introducció
+*****
+
+## Presentació
+Aquest exercici correspont a la practica 2 de l'Assignatura de visualització de dades del màster universitaria de ciència de dades de la UOC.
+
+## Objectius
+* Desenvolupar una visualització de dades mitjançant l’ús de diferents eines i tècniques, basades en el conjunt de dades d'una entitat sense de lucre (ONG) i validat a la primera part de la pràctica. Per realitzar la visualització el més útil possible realitzaré un anàlisis previ de la base dades per detectar necessitats (valors perduts, extrems, homegeïtzar dades, extracció de característiques etc)
+
+*****
+# Anàlisi exploratòria
+*****
+
+El primer que farem serà un anàlisis exploratori de les dades del dataset, per això carregarem el fitxer de dades:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+# Carreguem les llibreries necessàries
+if (!require('ggplot2')) install.packages('ggplot2'); library('ggplot2')
+if(!require('Rmisc')) install.packages('Rmisc'); library('Rmisc')
+if(!require('dplyr')) install.packages('dplyr'); library('dplyr')
+if(!require('xfun')) install.packages('xfun'); library('xfun')
+if(!require('readxl')) install.packages('xfun'); library('readxl')
+
+# Càrrega de l'arxiu
+path = 'colaboradores.xlsx'
+sociosData <-  read_xlsx(path)
+
+# Mostrem les primeres dades
+head(sociosData)
+
+```
+
+Verifiquem l'estructura del joc de dades principal. Veiem el nombre de columnes que tenim i exemples dels continguts de les files.
+
+```{r}
+# Resum
+str(sociosData)
+```
+
+```{r}
+# resum estadístic
+summary(sociosData)
+```
+
+Realitzem la primera modificació, i canviem el nom de la columna Sexe per Gènere que és més correcte
+
+```{r}
+# Sex->gender
+colnames(sociosData)[4]<-"Genero"
+```
+
+Veiem que tenim **17** variables i **84.121** registres
+
+Revisem la descripció de les variables contingudes al fitxer i els tipus de variables es correspon al que hem carregat. Les organitzem lògicament per donar-los sentit i construïm un petit diccionari de dades.
+
+
++ **ID**  (Numèric) identificador del col·laborador
+
+**FETS A ESTUDIAR**
+
++ **Estado** (String) Estat de la col·laboració (Activo o baja)
++ **Origen** (String) Canal de captació del col·laborador
++ **Género** (String) Gènere del col·laborador (H = Hombre / M = Mujer) 
++ **Motivo_Baja**  (String) Motiu de baixa de la col·laboració
++ **Numero Devoluciones Total** (Numèric) Número de devolucions totals durant la col·laboració
+
+**DIMENSIÓ GEOGRÀFICA**
+
++ **Provincia** (String) província del col·laborador (N/A per alguns col·laboradors)
++ **CP** (String) Codi postal del col·laborador (N/A per alguns col·laboradors)
++ **CCAA** (String) Comunitat autònoma del col·laborador (N/A per alguns col·laboradors)
++ **Country** (String) País del col·laborador
+
+
+**DIMENSIÓ TEMPORAL**
+
++ **Fecha Alta ** (date) Data d'inici de la col·laboració
++ **Fecha Baja** (date) Data de finalització de la col·laboració        
+
+
+**DIMENSIÓ COL·LABORACIÓ**
+
++ **Cuota Anualizada ** (Numeric) Quota anual de col·laboració
+
+**DIMENSIÓ INFORMACIÓ**
+
++ **Aceptar recibir info** (Boolean) El col·laborador accepta que li enviem comunicacions (0 = No, 1= Si)  
+
+**ALTRES**
+
++ **Idioma** (String) idioma de preferència de comunicació (Cat / Esp)
++ **Profesion** (string) Professió del col·laborador (N/A per alguns col·laboradors)
++ **Edad** (Numèric) Edat del col·laborador 
+
+El següent pas serà la neteja de dades, mirant si hi ha valors nulls. 
+
+```{r}
+# Revisió dels N/A
+colSums(is.na(sociosData))
+```
+
+Observem que hi han valors nuls a les dades. Primer de tot el que observem és que Fecha Baja i Motivo Baja tenen els mateixos valors nuls (n=57.468), això ens indica que totes les persones que estan de baixa tenen data de finalització i motiu de baixa (no hi ha discrepància de valors). Finalment observem com professió, província, CP, CCAA i edat si que tenen valors nulls. 
+
+El primer que farem serà assignar el valor “Desconegut” per als valors buits de la variable Província, CCAA i Professió. També assignarem el valor 60000 als CP buits.
+
+
+```{r}
+# NA->Desconegut
+sociosData$Provincia[is.na(sociosData$Provincia)] <- "Desconegut"
+sociosData$CCAA[is.na(sociosData$CCAA)] <- "Desconegut"
+sociosData$CP[is.na(sociosData$CP)] <- "60000"
+sociosData$Profesion[is.na(sociosData$Profesion)] <- "Desconegut"
+```
+
+També assignarem, la mitjana de les edats als valors buits de la variable “Edat”.
+
+```{r}
+# NA edat -> mean
+sociosData$Edad[is.na(sociosData$Edad)] <- mean(sociosData$Edad,na.rm=T)
+```
+
+```{r}
+summary(sociosData[,"Edad"])
+```
+De la informació mostrada destaquem que el col·laborador més jove té 18 anys i el més gran 106 anys. La mitjana d'edat la teníem gairebé en 62 anys. Com a primera conclusió extraurem que és una base de dades amb mitjanes de col·laboració força adulta.
+
+Si observem els NA (valors nuls) veiem que les dades estan prou bé. Decidim substituir el valor NA de Província, CP, CCAA i Professió per Desconegut per una major llegibilitat. També proposem substituir els NA de l’edat per la mitjana.
+
+Ara crearem una seria d'histogrames i descriure els valors per veure les dades en general i així fer una primera aproximació a les dades
+
+```{r}
+# Taula de freqüència per conèixer el % de socis actius i de baixa
+situacion = as.table(table(x=sociosData$Estado))
+prop.table(situacion)
+```
+
+```{r}
+# Gràfic il·lustratiu dels socis de baixa i actius
+ggplot(data=sociosData, aes(x = Estado)) +
+  geom_bar(width = 0.4, fill=rgb(0.1,0.3,0.5,0.7), aes(y = (..count..)/sum(..count..))) +
+  scale_x_discrete("Estat") +     
+  scale_y_continuous("Percentatge",labels=scales::percent) + 
+  labs(title = "Freqüència relativa de la variable Estado")
+
+```
+
+El primer que observem és que més del 68% dels col·laboradors estan actualment actius i per tant col·laboren econòmicament mentre que gairebé el 32% del col·laboradors ja no col·laboren econòmicament.
+
+```{r}
+# Taula de freqüència per conèixer els % de socis que son Homes o dones
+situacion= as.table(table(x=sociosData$Genero))
+prop.table(situacion)
+```
+
+```{r}
+# Gràfic il·lustratiu dels col·laboradors (actius o no per Gènere)
+ggplot(data=sociosData, aes(x = Genero)) +
+  geom_bar(width = 0.4, fill=rgb(0.1,0.3,0.5,0.7), aes(y = (..count..)/sum(..count..))) +
+  scale_x_discrete("Gènere") +     
+  scale_y_continuous("Percentatge",labels=scales::percent) +
+  labs(title = "Freqüència relativa de la variable Genero")
+```
+
+En aquest segons anàlisis visual, observem com les dones tendeixen a col·laborar més amb la causa que els homes, això pot ser degut a que les dones estan més sensibilitzades amb la causa. Observem com 6 de cada 10 col·laboradors son dones.
+
+Ara analitzarem si hi ha més baixes que siguin dones o homes
+
+```{r}
+# Visualització gràfica entre Gènere i estat de la col·laboració
+ggplot(data=sociosData,aes(x=Genero,fill=Estado))+
+  geom_bar()+
+  labs(title="Relació entre les variables Gènere i Estat de la relació",
+       x= "Gènere",
+       y="Número") +
+  scale_fill_manual(values=c("green3","red3"))
+
+```
+
+Sembla que hi han més dones que homes que es donen de baixa, però aquests últim gràfic no ens serveix del tot, ja que en el dataset com hem dit abans hi ha més dones que homes per tant procedim a analitzar les dades però proporcionades:
+
+```{r}
+# Visualització gràfica entre Gènere i estat de la col·laboració
+ggplot(sociosData, aes(Genero, fill=Estado)) +
+  geom_bar(position = "fill") +
+  labs(title="Proporcio entre les variables Genero i Estado de la relació",
+       x= "Gènere",
+       y="Frequència") +
+  scale_fill_manual(values=c("green3","red3"))
+```
+
+Si analitzem el percentatge de baixes respecte les altes, observem com és pràcticament similar. Per tant la variable "Gènere" no és determinant a l'hora de donar-se de baixa.
+
+Una altre variable important pot ser saber si tenim o no permisos per enviar informació i comunicar-nos. Crec que és important aquesta variable ja que la falta d'informació por fer que una persona es desvinculi.
+
+```{r}
+# Visualització gràfica dels permisos de comunicació
+sociosData$Aceptar_recibir_info <- ifelse(sociosData$Aceptar_recibir_info %in% c(0), 0, 1)
+counts <- table(sociosData$Aceptar_recibir_info)
+barplot(prop.table(counts),col=c("red3","green3"), main="Rebre informació", legend.text=c("No Info","Sí Info"),xlab ="Informació", ylab = "Percentatge",ylim=c(0,1) )
+
+```
+
+S'observa gràficament com gairebé el 100% dels socis, ens permeten que els hi enviem informació i per tant no és una variable determinant a l'hora de donar-se baixa.
+
+Un altre variable que si que pot ser determinant en les baixes és l'origen de captació, ja que hi han canals de captació que poden donar un alt volum d'altes però poden ser més agressius i per tant tenir més baixes. Anem a fer un anàlisis exploratori dels canals de captació:
+
+```{r}
+# Visualització gràfica dels canals d'entrada del socis i estat de la relació
+ggplot(data = sociosData,aes(x=Origen,fill=Estado))+
+  geom_bar(position="fill")+
+  ylab("Frequència")+
+  labs(title="Estat col·laboració en funció del canal de captació",
+       x= "Origen",
+       y="Frequència") +scale_fill_manual(values=c("green3","red3"))
+```
+
+Aquesta gràfica és molt interessant ja que si que ens aporta informació rellevant. Observem com el canal D2D (Door-to-door = porta freda), el 75% de les altes ja estan donades de baixa. El segon canal de captació és el F2F (Face-to-face = captació al carrer), on observem que gairebé 1 de cada 2 socis que entren per aquest canal, ja està de baixa. En canvi, els socis captats per digital o tlmk tenen un percentatge de baixes menor que els altes dos canals de captació. Finalment, com és lògic aquelles persones que han vingut físicament a la nostra oficina (SEDE) son els més fidels.
+
+Ara crearem una base de dades auxiliar amb els registres donats de baixa per facilitar-nos la anàlisis d'aquests segment en concret:
+
+```{r}
+# Creem un nou dataset amb tots els registres de baixa
+bajasData <- sociosData[sociosData$Estado=="Baja",]
+```
+
+Fem un ràpid anàlisis d'aquesta base de dades:
+```{r}
+# Resum
+str(bajasData)
+```
+
+Veiem que tenim les mateixes **17** variables però el número de registres s'ha reduït fins els **26.653** registres
+
+Ara analitzarem les categories dels motius de baixa per veure si ens pot donar alguna pista sobre quina variable més podem analitzar:
+
+```{r}
+# Gràfic il·lustratiu dels motius de baixa
+ggplot(data=bajasData, aes(x = Motivo_Baja)) +
+  geom_bar(width = 0.4, fill=rgb(0.1,0.3,0.5,0.7), aes(y = (..count..)/sum(..count..))) +
+  scale_x_discrete("Motius de Baixa") +     
+  scale_y_continuous("Percentatge",labels=scales::percent) + 
+  labs(title = "Freqüència relativa dels motius de baixa")+
+  coord_flip()
+```
+
+Observem com els motius de baixa més destacats son **Impago** i **econòmics** per tant ara procedirem a analitzar quotes i devolucions per veure si aquestes variables son determinants a l'hora de detectar una baixa.
+
+Primer de tot, farem un anàlisis de les devolucions, és a dir, al número de quotes que el soci ens ha retornat per veure si les baixes tendeixen a retornar més quotes i per tant ser una variable important i determinant:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+summary(bajasData[c("Num_Devoluciones_Total","Cuota_Anualizada")])
+#Crearem una llista per mostrar els atributs que interessen.
+histList<- list()
+n = c("Num_Devoluciones_Total", "Cuota_Anualizada")
+bajasDataAux= bajasData %>% select(all_of(n))
+for(i in 1:ncol(bajasDataAux)){
+  col <- names(bajasDataAux)[i]
+  ggp <- ggplot(bajasDataAux, aes_string(x = col)) +
+    geom_histogram(bins = 75, fill = "cornflowerblue", color = "black") 
+      histList[[i]] <- ggp  # afegim cada plot a la llista buida
+}
+ multiplot(plotlist = histList, cols = 1)
+
+```
+
+Destaquem que hi han col·laboradors que no han realitzat mai una devolució, però la mitjana es que realitzin 2 devolucions. El valor màxim son 71 devolucions.
+
+Pel que fa a la quota anual, observem com el valor mínim son 10 euros mentre que la mitja està als 144 euros anuals. Observem com el valor màxim son 2.400 euros anuals.
+
+Una altre variable interessant a analitzar pot ser el temps de permanència dels col·laboradors. Son baixes ràpides? Depèn del canal de captació?
+
+Per la realització d'aquest punt, creem una nova variable, calculant la diferencia en dies de la data de baixa i la data d'alta
+
+```{r}
+# Nova variable en el dataset de les baixes
+bajasData$Tiempo <- as.numeric(difftime(bajasData$Fecha_Baja, bajasData$Fecha_Alta, units = "days"))
+str(bajasData$Tiempo)
+```
+
+```{r}
+summary(bajasData$Tiempo)
+```
+Realitzant aquest anàlisis de temporalitat, observem que el mínim és un valor negatiu i per tant que hi han dades incorrectes ja que la data de baixa no pot ser anterior a la baixa d'alta.
+
+Per solucionar aquest error, procedirem a modificar aquests valors per 0, entent que la data de baixa va ser el mateix dia que la data d'alta
+
+```{r}
+# visualitxem les dades amb els error:
+bajasData %>%
+  filter(bajasData$Tiempo<0)
+```
+Observem com és unicament un registre on efectivament la "Fecha_Baja" es abans a la "Fecha_Alta". En aquests casos modificarem la variable Tiempo i li assignarem el valor 0
+
+```{r}
+# Si Temps < 0 <- 0
+bajasData$Tiempo[ bajasData$Tiempo < 0 ] <- 0
+# comprovació que ho he solucionat
+bajasData %>%
+  filter(bajasData$Tiempo<0)
+```
+
+```{r}
+# Anàlisis estadístic
+summary(bajasData$Tiempo)
+str(bajasData$Tiempo)
+```
+Ara si tornem a analitzar la variable "Tiempo", veiem com no hi han valors negatius, el mínim és 0 és a dir son altes i baixes en el mateix moment, la mitjana son 329 dies (és a dir abans de l'any) i el màxim és de 9 anys (3.347 dies).
+
+### Anàlisis d'alguna variable més
+
+A continuació realitzarem algun anàlisis addicional.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# boxplot quota anual
+boxplot (sociosData$Cuota_Anualizada)
+```
+
+En el boxplot de la quota anual, no es pot apreciar res a causa de les observacions amb valors elevats
+
+Ara analitzarem si segueix un patró de normalitat:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+# Carreguem la llibreria necessària
+library (ggplot2)
+
+# Visualització gràfica de la normalitat
+ggplot(sociosData,aes(x=Cuota_Anualizada)) +
+geom_bar(fill="lightblue") +
+theme_bw()
+
+#contrast normalitat
+library(nortest)
+lillie.test(sociosData$Cuota_Anualizada)
+
+# gràfic quantile
+qqnorm(sociosData$Cuota_Anualizada)
+qqline(sociosData$Cuota_Anualizada)
+
+```
+
+Tal i com era d'esperar la quota anual no es distribueix segons una distribució normal.
+
+*****
+# Conclusió
+*****
+
+Per finalitzar farem unes breus conclusions de les dades estudiades.
+
+Les dades que s'han treballant durant aquesta pràctica provenen d'una font de dades sobre els col·laboradors d'una entitat del tercer sector (Fundació / ONG). Tots els registres tenen un identificador únic i poden estar actius o de baixa. A més tenen un sèrie de de variables que enriqueixen les dades (origen de captació, quotes, devolucions...)
+
+Les dades han estat revisades i sembla que estan ben informades, a més d'estar força netes i ben documentades. Els camps amb valors buits no m'han generat gaires problemes.
+
+Destaquem la bona salut de la base de dades dels col·laboradors on el 68% estan actius mentre que només un 32% està de baixa. També hem observat com 6 de cada 10 nous sòcies son dones i per tant el perfil del captació hauria de ser una dona d'uns 62 anys.
+
+També hem observat com hi han canals de captació que tenen un percentatge de baixa més elevat i això s'ha de tenir en compte per l’estratègia de creixement de l'entitat.
+
+Amb aquestes conclusions, fem la visualització!
